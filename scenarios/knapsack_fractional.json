@@ -1,0 +1,10 @@
+{
+  "kind": "knapsack",
+  "items_divisible": true,
+  "capacity": 50,
+  "items": [
+    {"name": "gold", "weight": 10, "value": 60},
+    {"name": "silver", "weight": 20, "value": 100},
+    {"name": "bronze", "weight": 30, "value": 120}
+  ]
+}

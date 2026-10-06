@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
 
+DENSITY_THRESHOLD = 0.4
+DECREASE_KEY_DOMINANCE = 1.0
+
+
 class DSU:
     def __init__(self, vertices):
         self.parent = {v: v for v in vertices}
@@ -58,20 +62,100 @@ def compute_graph_density(graph: Dict[str, Any]) -> float:
 
 def classify_problem(problem_name: str) -> Dict[str, Any]:
     mapping = {
-        "red_black_tree": {"complexity": "polynomial", "class": "polynomial"},
-        "b_tree": {"complexity": "polynomial", "class": "polynomial"},
-        "binomial_heap": {"complexity": "polynomial", "class": "polynomial"},
-        "fibonacci_heap": {"complexity": "polynomial", "class": "polynomial"},
-        "mst": {"complexity": "polynomial", "class": "polynomial"},
-        "floyd_warshall": {"complexity": "polynomial", "class": "polynomial"},
-        "fractional_knapsack": {"complexity": "polynomial", "class": "polynomial"},
-        "zero_one_knapsack": {"complexity": "pseudo_polynomial", "class": "pseudo_polynomial"},
-        "matrix_chain": {"complexity": "polynomial", "class": "polynomial"},
-        "hamiltonian": {"complexity": "np_complete", "class": "np_complete"},
-        "n_queens": {"complexity": "exponential", "class": "exponential"},
-        "tsp": {"complexity": "np_hard", "class": "np_hard"},
+        "red_black_tree": {
+            "complexity": "polynomial",
+            "class": "polynomial",
+            "decision_vs_optimization": "Optimization version is polynomial; search/insert/delete are O(log n)",
+        },
+        "b_tree": {
+            "complexity": "polynomial",
+            "class": "polynomial",
+            "decision_vs_optimization": "Optimization version is polynomial; search/insert/delete are O(log n) with high fan-out (disk-friendly)",
+        },
+        "binomial_heap": {
+            "complexity": "polynomial",
+            "class": "polynomial",
+            "decision_vs_optimization": "Optimization version is polynomial; merge is efficient, operations near O(log n)",
+        },
+        "fibonacci_heap": {
+            "complexity": "polynomial",
+            "class": "polynomial",
+            "decision_vs_optimization": "Optimization version is polynomial; decrease-key is amortized O(1)",
+        },
+        "mst": {
+            "complexity": "polynomial",
+            "class": "polynomial",
+            "decision_vs_optimization": "Optimization version is polynomial; MST is O(E log V) or better with appropriate heaps",
+        },
+        "floyd_warshall": {
+            "complexity": "polynomial",
+            "class": "polynomial",
+            "decision_vs_optimization": "Optimization version is polynomial; all-pairs shortest paths are Θ(V³)",
+        },
+        "fractional_knapsack": {
+            "complexity": "polynomial",
+            "class": "polynomial",
+            "decision_vs_optimization": "Optimization version is polynomial; greedy by value/weight is optimal for divisible items",
+        },
+        "zero_one_knapsack": {
+            "complexity": "pseudo_polynomial",
+            "class": "pseudo_polynomial",
+            "decision_vs_optimization": "Decision version is NP-Complete; optimization version is pseudo-polynomial in capacity W",
+        },
+        "matrix_chain": {
+            "complexity": "polynomial",
+            "class": "polynomial",
+            "decision_vs_optimization": "Optimization version is polynomial; classic DP over parenthesizations",
+        },
+        "hamiltonian": {
+            "complexity": "np_complete",
+            "class": "np_complete",
+            "decision_vs_optimization": "Decision version is NP-Complete; feasibility of a Hamiltonian cycle",
+        },
+        "n_queens": {
+            "complexity": "exponential",
+            "class": "exponential",
+            "decision_vs_optimization": "Feasibility / constraint-satisfaction problem; worst-case exponential search tree",
+        },
+        "tsp": {
+            "complexity": "np_hard",
+            "class": "np_hard",
+            "decision_vs_optimization": "Optimization version is NP-Hard; decision version is NP-Complete",
+        },
     }
-    return mapping.get(problem_name, {"complexity": "unknown", "class": "unknown"})
+    return mapping.get(problem_name, {
+        "complexity": "unknown",
+        "class": "unknown",
+        "decision_vs_optimization": "Unknown",
+    })
+
+
+def build_decision_result(
+    *,
+    problem_type: str,
+    chosen_algorithm: str,
+    alternative: str,
+    rule_id: str,
+    rule_fired: str,
+    explanation: str,
+    features: Dict[str, Any],
+) -> Dict[str, Any]:
+    complexity = classify_problem(problem_type)
+    return {
+        "problem_type": problem_type,
+        "chosen_algorithm": chosen_algorithm,
+        "alternative": alternative,
+        "rule_id": rule_id,
+        "rule_fired": rule_fired,
+        "complexity_class": complexity["class"],
+        "complexity": complexity["complexity"],
+        "decision_vs_optimization": complexity["decision_vs_optimization"],
+        "explanation": explanation,
+        "features": features,
+        "problem": problem_type,
+        "algorithm": chosen_algorithm,
+        "reason": explanation,
+    }
 
 
 def detect_problem(scenario: Any) -> Dict[str, Any]:
@@ -81,118 +165,182 @@ def detect_problem(scenario: Any) -> Dict[str, Any]:
     if graph_density is None and isinstance(graph, dict):
         graph_density = compute_graph_density(graph)
 
-    kind = str(data.get("kind", "")).lower()
+    kind = str(data.get("kind", "")).lower().strip()
+
+    features = {
+        "kind": kind,
+        "graph_density": graph_density,
+        "storage": data.get("storage"),
+        "disk_based": data.get("disk_based"),
+        "needs_mergeable_priority": data.get("needs_mergeable_priority"),
+        "decrease_key_ratio": data.get("decrease_key_ratio", 0.0),
+        "merge_ratio": data.get("merge_ratio", 0.0),
+        "return_to_start": data.get("return_to_start"),
+        "items_divisible": data.get("items_divisible"),
+        "matrix_dims": data.get("matrix_dims"),
+        "n": data.get("n"),
+        "must_visit_each_vertex": data.get("must_visit_each_vertex"),
+        "grid_conflict_constraints": data.get("grid_conflict_constraints"),
+        "all_pairs_needed": data.get("all_pairs_needed"),
+    }
+
     if kind in {"ordered_search", "ordered_searchable_data", "red_black_tree", "b_tree"}:
         if data.get("storage") == "disk" or data.get("disk_based"):
-            return {
-                "problem": "b_tree",
-                "algorithm": "b_tree",
-                "reason": "Disk-resident ordered data needs high fan-out index blocks to reduce page reads.",
-                "complexity": classify_problem("b_tree"),
-            }
-        return {
-            "problem": "red_black_tree",
-            "algorithm": "red_black_tree",
-            "reason": "In-memory ordered search with mixed insert/delete/lookups fits a balance-maintaining tree.",
-            "complexity": classify_problem("red_black_tree"),
-        }
+            return build_decision_result(
+                problem_type="b_tree",
+                chosen_algorithm="b_tree",
+                alternative="red_black_tree",
+                rule_id="RULE_ORDERED_DISK",
+                rule_fired="storage == 'disk' or disk_based == True",
+                explanation="Disk-resident ordered data benefits from high fan-out (B-Tree) to minimise page I/O.",
+                features=features,
+            )
+        return build_decision_result(
+            problem_type="red_black_tree",
+            chosen_algorithm="red_black_tree",
+            alternative="b_tree",
+            rule_id="RULE_ORDERED_MEMORY",
+            rule_fired="in-memory ordered search with mixed updates",
+            explanation="In-memory ordered dictionary with frequent inserts/deletes/lookups fits a balanced BST (Red-Black Tree).",
+            features=features,
+        )
 
-    if kind in {"priority_queue", "mergeable_priority", "priority_workload"} or data.get("needs_mergeable_priority"):
-        ratio = data.get("decrease_key_ratio", 0)
-        merge_ratio = data.get("merge_ratio", 0)
-        if ratio > merge_ratio:
-            return {
-                "problem": "fibonacci_heap",
-                "algorithm": "fibonacci_heap",
-                "reason": "Many decrease-key operations make Fibonacci Heap attractive because decrease-key is amortized O(1).",
-                "complexity": classify_problem("fibonacci_heap"),
-            }
-        return {
-            "problem": "binomial_heap",
-            "algorithm": "binomial_heap",
-            "reason": "A merge-heavy workload benefits from Binomial Heap's efficient union and simpler structure.",
-            "complexity": classify_problem("binomial_heap"),
-        }
+    if (kind in {"priority_queue", "mergeable_priority", "priority_workload"}
+            or data.get("needs_mergeable_priority")):
+        dec_ratio = float(data.get("decrease_key_ratio", 0) or 0)
+        merge_ratio = float(data.get("merge_ratio", 0) or 0)
+
+        if dec_ratio > merge_ratio * DECREASE_KEY_DOMINANCE:
+            return build_decision_result(
+                problem_type="fibonacci_heap",
+                chosen_algorithm="fibonacci_heap",
+                alternative="binomial_heap",
+                rule_id="RULE_HEAP_DECREASE_KEY",
+                rule_fired=f"decrease_key_ratio ({dec_ratio}) > merge_ratio ({merge_ratio})",
+                explanation="Decrease-key heavy workload favours Fibonacci Heap (amortized O(1) decrease-key).",
+                features=features,
+            )
+        return build_decision_result(
+            problem_type="binomial_heap",
+            chosen_algorithm="binomial_heap",
+            alternative="fibonacci_heap",
+            rule_id="RULE_HEAP_MERGE",
+            rule_fired="merge-heavy or balanced priority workload",
+            explanation="Merge-heavy or balanced priority workload is well-served by Binomial Heap (efficient meld + simpler constants).",
+            features=features,
+        )
 
     if kind in {"tsp", "traveling_salesperson", "traveling_salesman"} or data.get("return_to_start"):
-        return {
-            "problem": "tsp",
-            "algorithm": "branch_and_bound",
-            "reason": "The objective is a minimum complete tour, which is a classic TSP optimization problem and exact solvers use branch-and-bound.",
-            "complexity": classify_problem("tsp"),
-        }
+        return build_decision_result(
+            problem_type="tsp",
+            chosen_algorithm="branch_and_bound",
+            alternative="held_karp_dp_or_nearest_neighbor",
+            rule_id="RULE_TSP",
+            rule_fired="return_to_start == True or kind indicates TSP",
+            explanation="Minimum-cost complete tour (return to start). Branch-and-Bound is an exact method suitable for modest n.",
+            features=features,
+        )
 
     if kind in {"mst", "minimum_spanning_tree"} or graph:
-        if graph_density is not None and graph_density >= 0.5:
+        dens = graph_density if graph_density is not None else 0.0
+        if dens >= DENSITY_THRESHOLD:
             preferred = data.get("preferred_algorithm", "prim")
-            return {
-                "problem": "mst",
-                "algorithm": preferred,
-                "reason": "Dense graph makes Prim efficient with adjacency matrix or dense-based implementation.",
-                "complexity": classify_problem("mst"),
-            }
+            return build_decision_result(
+                problem_type="mst",
+                chosen_algorithm=preferred,
+                alternative="kruskal",
+                rule_id="RULE_MST_DENSE",
+                rule_fired=f"graph_density ({dens:.3f}) >= {DENSITY_THRESHOLD}",
+                explanation="Dense graph → Prim is typically preferable (avoids sorting all edges, works well with adjacency matrix / dense representation).",
+                features=features,
+            )
         preferred = data.get("preferred_algorithm", "kruskal")
-        return {
-            "problem": "mst",
-            "algorithm": preferred,
-            "reason": "Sparse edge set benefits from Kruskal's edge sorting and union-find structure.",
-            "complexity": classify_problem("mst"),
-        }
+        return build_decision_result(
+            problem_type="mst",
+            chosen_algorithm=preferred,
+            alternative="prim",
+            rule_id="RULE_MST_SPARSE",
+            rule_fired=f"graph_density ({dens:.3f}) < {DENSITY_THRESHOLD}",
+            explanation="Sparse graph → Kruskal + Union-Find is efficient and simple.",
+            features=features,
+        )
 
     if kind in {"floyd_warshall", "all_pairs_shortest_path"} or data.get("all_pairs_needed"):
-        return {
-            "problem": "floyd_warshall",
-            "algorithm": "floyd_warshall",
-            "reason": "The problem needs all-pairs shortest path costs in a dense graph; Floyd-Warshall is appropriate.",
-            "complexity": classify_problem("floyd_warshall"),
-        }
+        return build_decision_result(
+            problem_type="floyd_warshall",
+            chosen_algorithm="floyd_warshall",
+            alternative="repeated_dijkstra",
+            rule_id="RULE_ALL_PAIRS",
+            rule_fired="all_pairs_needed == True",
+            explanation="All-pairs shortest paths required. Floyd-Warshall is the classic exact O(V³) solution (especially natural on dense graphs).",
+            features=features,
+        )
 
-    if kind in {"knapsack", "fractional_knapsack"} or "items_divisible" in data:
+    if kind in {"knapsack", "fractional_knapsack", "zero_one_knapsack"} or "items_divisible" in data:
         if data.get("items_divisible"):
-            return {
-                "problem": "fractional_knapsack",
-                "algorithm": "fractional_knapsack",
-                "reason": "Fractional items can be split, so the greedy ratio-based strategy is exact.",
-                "complexity": classify_problem("fractional_knapsack"),
-            }
-        return {
-            "problem": "zero_one_knapsack",
-            "algorithm": "zero_one_knapsack",
-            "reason": "Indivisible items require item-level decisions, so dynamic programming is the correct exact approach.",
-            "complexity": classify_problem("zero_one_knapsack"),
-        }
+            return build_decision_result(
+                problem_type="fractional_knapsack",
+                chosen_algorithm="fractional_knapsack",
+                alternative="zero_one_knapsack",
+                rule_id="RULE_KNAPSACK_FRACTIONAL",
+                rule_fired="items_divisible == True",
+                explanation="Items may be taken fractionally → greedy by value/weight is optimal and polynomial.",
+                features=features,
+            )
+        return build_decision_result(
+            problem_type="zero_one_knapsack",
+            chosen_algorithm="zero_one_knapsack",
+            alternative="fractional_knapsack",
+            rule_id="RULE_KNAPSACK_01",
+            rule_fired="items_divisible == False",
+            explanation="Items are indivisible → classic 0/1 Knapsack solved by pseudo-polynomial DP.",
+            features=features,
+        )
 
     if kind in {"matrix_chain", "matrix_chain_multiplication"} or data.get("matrix_dims"):
-        return {
-            "problem": "matrix_chain",
-            "algorithm": "matrix_chain_multiplication",
-            "reason": "Matrix dimensions specify a chain with different parenthesization costs; DP finds the best order.",
-            "complexity": classify_problem("matrix_chain"),
-        }
+        return build_decision_result(
+            problem_type="matrix_chain",
+            chosen_algorithm="matrix_chain_multiplication",
+            alternative="naive_parenthesization",
+            rule_id="RULE_MATRIX_CHAIN",
+            rule_fired="matrix_dims provided",
+            explanation="Sequence of matrix dimensions defines an optimal parenthesization problem; solved by DP.",
+            features=features,
+        )
 
     if kind in {"hamiltonian", "hamiltonian_cycle"} or data.get("must_visit_each_vertex"):
-        return {
-            "problem": "hamiltonian",
-            "algorithm": "backtracking",
-            "reason": "Feasibility requires visiting each vertex exactly once, which is a classical backtracking search.",
-            "complexity": classify_problem("hamiltonian"),
-        }
+        return build_decision_result(
+            problem_type="hamiltonian",
+            chosen_algorithm="backtracking",
+            alternative="held_karp_style_dp",
+            rule_id="RULE_HAMILTONIAN",
+            rule_fired="must_visit_each_vertex == True",
+            explanation="Visit-every-vertex-exactly-once feasibility problem. Backtracking is appropriate for small instances.",
+            features=features,
+        )
 
-    if kind in {"n_queen", "nqueens", "n_queens", "conflict_free_placement"} or data.get("grid_conflict_constraints"):
-        return {
-            "problem": "n_queens",
-            "algorithm": "backtracking",
-            "reason": "Mutually conflicting placements on a grid are modeled as non-attacking positions with a backtracking search.",
-            "complexity": classify_problem("n_queens"),
-        }
+    if (kind in {"n_queen", "nqueens", "n_queens", "conflict_free_placement"}
+            or data.get("grid_conflict_constraints")):
+        return build_decision_result(
+            problem_type="n_queens",
+            chosen_algorithm="backtracking",
+            alternative="constraint_programming",
+            rule_id="RULE_NQUEENS",
+            rule_fired="grid_conflict_constraints == True or kind indicates N-Queens",
+            explanation="Non-attacking / mutually conflicting placement on a grid → classic backtracking constraint satisfaction.",
+            features=features,
+        )
 
-    if data.get("storage") == "disk":
-        return {
-            "problem": "b_tree",
-            "algorithm": "b_tree",
-            "reason": "This is a disk-based ordered search problem.",
-            "complexity": classify_problem("b_tree"),
-        }
+    if data.get("storage") == "disk" or data.get("disk_based"):
+        return build_decision_result(
+            problem_type="b_tree",
+            chosen_algorithm="b_tree",
+            alternative="red_black_tree",
+            rule_id="RULE_ORDERED_DISK_FALLBACK",
+            rule_fired="storage == 'disk' (fallback)",
+            explanation="Disk-based ordered data → B-Tree.",
+            features=features,
+        )
 
     raise ValueError(f"Unhandled scenario: {data}")
 
@@ -468,30 +616,69 @@ def build_report() -> str:
     return """
 # DAA Decision Framework Report
 
-The framework accepts a scenario, extracts problem features, selects a DAA formulation, runs the algorithm, measures performance, and explains the decision.
+## Architecture
 
-## Decision rules
-- Ordered data + disk -> B-Tree
-- Ordered data + memory -> Red-Black Tree
-- Merge-heavy priority queue -> Binomial Heap
-- Frequent decrease-key workload -> Fibonacci Heap
-- Dense graph -> Prim
-- Sparse graph -> Kruskal
-- Divisible items -> Fractional Knapsack
-- Indivisible items -> 0/1 Knapsack
-- All-pairs cost -> Floyd-Warshall
-- Matrix chain -> Dynamic programming
-- Feasibility of visiting all vertices -> Hamiltonian backtracking
-- Placement constraints -> N-Queen style backtracking
-- Complete tour minimization -> TSP with branch and bound
+```text
+Scenario Input
+    ↓
+Feature Extraction
+    ↓
+Rule-based Decision Engine
+    ↓
+Algorithm / Data Structure Selection
+    ↓
+Execution + Measurement
+    ↓
+Explanation + Complexity Classification
+```
+
+## Scenario and objective
+The framework reads a scenario expressed as structured data, identifies the entities, constraints, and optimization goal, and then maps it to an appropriate design-and-analysis-of-algorithms formulation. It handles graph, ordering, optimization, feasibility, and dynamic-programming problems under a single rule-based engine.
+
+## Decision rules and thresholds
+- Dense graph: if graph_density >= 0.4, prefer Prim for MST; otherwise choose Kruskal.
+- Ordered searchable data: choose B-Tree for disk workloads and Red-Black Tree for in-memory workloads.
+- Priority queue workload: if decrease_key_ratio > merge_ratio, prefer Fibonacci Heap; otherwise prefer Binomial Heap.
+- Divisible items: if items_divisible is true, choose Fractional Knapsack; otherwise use 0/1 Knapsack.
+- All-pairs shortest path: if all_pairs_needed is true, choose Floyd-Warshall.
+- Matrix chain: if matrix dimensions are supplied, use matrix-chain dynamic programming.
+- Feasibility search: if the task is to visit every vertex exactly once, use Hamiltonian backtracking.
+- Placement constraints: use N-Queens style backtracking when conflict constraints are present.
+- Complete tour: if the goal is a minimum complete tour, use TSP branch-and-bound.
+
+## Why this algorithm was chosen
+The framework does not hard-code a single answer for every input. Instead, it inspects the scenario features and compares the best matching DAA method against a meaningful alternative. For example:
+
+- Prim vs Kruskal: dense graphs favour Prim; sparse graphs favour Kruskal.
+- Fractional vs 0/1 Knapsack: divisible items allow greedy choice; indivisible items require DP.
+- Fibonacci vs Binomial Heap: decrease-key-heavy workloads favour Fibonacci Heap; merge-heavy workloads favour Binomial Heap.
+- B-Tree vs Red-Black Tree: disk-backed ordered data needs B-Tree; in-memory ordered data suits Red-Black Tree.
 
 ## Complexity classification
 - MST: polynomial
 - Fractional Knapsack: polynomial
-- 0/1 Knapsack: pseudo-polynomial / decision NP-Complete
-- TSP: NP-Hard optimization; decision NP-Complete
-- Hamiltonian cycle: NP-Complete decision
-- N-Queen: exponential search, not automatically NP-Complete
+- 0/1 Knapsack: pseudo-polynomial; decision version is NP-Complete
+- TSP: NP-Hard optimization; decision version is NP-Complete
+- Hamiltonian cycle: NP-Complete decision problem
+- N-Queens: exponential worst-case search tree; not automatically NP-Complete under the usual formulation
+- Floyd-Warshall: polynomial, O(V^3)
+- Matrix-chain multiplication: polynomial dynamic-programming solution
+
+## Measured runtime and memory
+The framework measures runtime with time.perf_counter() and memory with tracemalloc. Each run returns a runtime_seconds value and a memory_bytes peak. These are used alongside theoretical complexity to explain why some problems scale differently as input size increases.
+
+## What changes when the input changes
+The framework is intentionally sensitive to the scenario features:
+- Switching from sparse to dense graphs changes MST selection from Kruskal to Prim.
+- Switching from divisible to indivisible items changes the solution from greedy to dynamic programming.
+- Increasing the decrease-key ratio relative to the merge ratio shifts the heap choice from Binomial to Fibonacci.
+- Larger n values create explosively larger search spaces for N-Queens, Hamiltonian, and TSP.
+
+## Limitations and scalability notes
+The framework is best for small to medium exact instances where the problem can be described clearly enough to identify a correct DAA formulation. NP-hard and NP-complete problems are handled exactly, but their combinatorial growth means they become impractical as n increases. The rule-based design is deterministic and transparent, which is valuable for teaching and comparison, but it is not a general-purpose intelligent optimizer.
+
+## Validation
+The framework is tested with pytest across detection logic, execution, and scenario-file handling. The test suite confirms that the main decision rules and solver calls work as intended.
 """
 
 

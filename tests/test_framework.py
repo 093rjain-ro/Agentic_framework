@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from daa_framework.framework import detect_problem, classify_problem, run_scenario
+from daa_framework.framework import detect_problem, classify_problem, run_scenario, build_report
 
 
 def test_fractional_knapsack_detection():
@@ -56,3 +56,12 @@ def test_scenario_file_run(tmp_path):
     }))
     result = run_scenario(scenario_path)
     assert result["status"] == "ok"
+
+
+def test_report_has_assignment_sections():
+    report = build_report()
+    assert "Scenario and objective" in report
+    assert "Why this algorithm was chosen" in report
+    assert "Complexity classification" in report
+    assert "What changes when the input changes" in report
+    assert "Architecture" in report

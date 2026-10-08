@@ -350,11 +350,16 @@ def fractional_knapsack(items: Iterable[Dict[str, float]], capacity: float) -> D
     total_value = 0.0
     total_weight = 0.0
     chosen: List[Dict[str, Any]] = []
-    for item in sorted(list_items, key=lambda x: (x["value"] / x["weight"], x["value"]), reverse=True):
+    for item in list_items:
+        if item["weight"] == 0 and item["value"] > 0:
+            total_value += item["value"]
+            chosen.append({"name": item.get("name", "item"), "fraction": 1.0, "weight": 0, "value": item["value"]})
+    weighted_items = [item for item in list_items if item["weight"] > 0 and item["value"] > 0]
+    for item in sorted(weighted_items, key=lambda x: (x["value"] / x["weight"], x["value"]), reverse=True):
         if capacity <= 0:
             break
         take = min(item["weight"], capacity)
-        fraction = take / item["weight"] if item["weight"] > 0 else 0
+        fraction = take / item["weight"]
         total_value += item["value"] * fraction
         total_weight += take
         chosen.append({"name": item.get("name", "item"), "fraction": fraction, "weight": take, "value": item["value"] * fraction})
@@ -404,7 +409,12 @@ def minimum_spanning_tree(graph: Dict[str, Any], algorithm: str = "prim") -> Dic
             for next_vertex, next_w in adjacency[v]:
                 if next_vertex not in visited:
                     candidates.append((next_w, v, next_vertex))
-        return {"cost": total_cost, "edges": edges, "tree": edges}
+        return {
+            "cost": total_cost,
+            "edges": edges,
+            "tree": edges,
+            "is_spanning_tree": len(edges) == max(len(vertices) - 1, 0),
+        }
 
     dsu = DSU(vertices)
     selected = []
@@ -413,7 +423,12 @@ def minimum_spanning_tree(graph: Dict[str, Any], algorithm: str = "prim") -> Dic
         if dsu.union(u, v):
             selected.append((u, v, w))
             total_cost += w
-    return {"cost": total_cost, "edges": selected, "tree": selected}
+    return {
+        "cost": total_cost,
+        "edges": selected,
+        "tree": selected,
+        "is_spanning_tree": len(selected) == max(len(vertices) - 1, 0),
+    }
 
 
 def floyd_warshall(graph: Dict[str, Any]) -> Dict[str, Any]:
@@ -513,7 +528,9 @@ def tsp_branch_and_bound(graph: Dict[str, Any]) -> Dict[str, Any]:
     vertices = graph.get("vertices", [])
     edges = graph.get("edges", [])
     if not vertices:
-        return {"cost": 0, "tour": []}
+        return {"cost": 0, "tour": [], "tour_found": True}
+    if len(vertices) == 1:
+        return {"cost": 0, "tour": [vertices[0], vertices[0]], "tour_found": True}
     dist = {(u, v): w for u, v, w in edges}
     for u, v, w in edges:
         dist[(v, u)] = w
@@ -553,7 +570,8 @@ def tsp_branch_and_bound(graph: Dict[str, Any]) -> Dict[str, Any]:
             visited.remove(nxt)
 
     dfs(start, 0.0, [start])
-    return {"cost": best_cost if best_cost < math.inf else 0, "tour": best_path}
+    tour_found = best_cost < math.inf
+    return {"cost": best_cost if tour_found else None, "tour": best_path, "tour_found": tour_found}
 
 
 def run_scenario(scenario: Any) -> Dict[str, Any]:
@@ -612,6 +630,127 @@ def generate_architecture_diagram() -> str:
 """
 
 
+def benchmark_cases() -> List[Dict[str, Any]]:
+    benchmark_specs = [
+        {
+            "name": "dense_mst",
+            "problem": "mst",
+            "scenario": {
+                "kind": "mst",
+                "graph_density": 0.8,
+                "graph": {
+                    "vertices": ["A", "B", "C", "D", "E"],
+                    "edges": [
+                        ("A", "B", 1), ("A", "C", 2), ("A", "D", 3), ("A", "E", 4),
+                        ("B", "C", 1), ("B", "D", 2), ("B", "E", 5), ("C", "D", 1),
+                        ("C", "E", 3), ("D", "E", 2),
+                    ],
+                },
+            },
+        },
+        {
+            "name": "sparse_mst",
+            "problem": "mst",
+            "scenario": {
+                "kind": "mst",
+                "graph_density": 0.2,
+                "graph": {
+                    "vertices": ["A", "B", "C", "D", "E"],
+                    "edges": [
+                        ("A", "B", 2), ("B", "C", 3), ("C", "D", 4), ("D", "E", 5),
+                        ("A", "E", 7), ("B", "D", 1), ("C", "E", 2),
+                    ],
+                },
+            },
+        },
+        {
+            "name": "tsp_10",
+            "problem": "tsp",
+            "scenario": {
+                "kind": "tsp",
+                "return_to_start": True,
+                "graph": {
+                    "vertices": [chr(65 + i) for i in range(10)],
+                    "edges": [],
+                },
+            },
+        },
+        {
+            "name": "n_queens_10",
+            "problem": "n_queens",
+            "scenario": {"kind": "n_queens", "n": 10, "grid_conflict_constraints": True},
+        },
+        {
+            "name": "zero_one_knapsack",
+            "problem": "zero_one_knapsack",
+            "scenario": {
+                "kind": "knapsack",
+                "items_divisible": False,
+                "items": [
+                    {"name": "A", "value": 60, "weight": 10},
+                    {"name": "B", "value": 100, "weight": 20},
+                    {"name": "C", "value": 120, "weight": 30},
+                    {"name": "D", "value": 180, "weight": 40},
+                    {"name": "E", "value": 200, "weight": 50},
+                ],
+                "capacity": 50,
+            },
+        },
+        {
+            "name": "fractional_knapsack",
+            "problem": "fractional_knapsack",
+            "scenario": {
+                "kind": "knapsack",
+                "items_divisible": True,
+                "items": [
+                    {"name": "A", "value": 60, "weight": 10},
+                    {"name": "B", "value": 100, "weight": 20},
+                    {"name": "C", "value": 120, "weight": 30},
+                ],
+                "capacity": 50,
+            },
+        },
+    ]
+
+    # Complete the generated TSP graph deterministically so it is still tractable for benchmarking.
+    t = benchmark_specs[2]["scenario"]
+    vertices = t["graph"]["vertices"]
+    edges = []
+    for i, u in enumerate(vertices):
+        for j in range(i + 1, len(vertices)):
+            v = vertices[j]
+            w = ((i + 1) * (j + 2)) % 9 + 1
+            edges.append((u, v, w))
+    t["graph"]["edges"] = edges
+
+    rows: List[Dict[str, Any]] = []
+    for spec in benchmark_specs:
+        outcome = run_scenario(spec["scenario"])
+        decision = outcome.get("decision", {})
+        rows.append({
+            "name": spec["name"],
+            "problem": decision.get("problem") or spec["problem"],
+            "algorithm": decision.get("algorithm") or "n/a",
+            "runtime_seconds": round(float(outcome.get("runtime_seconds", 0.0)), 6),
+            "memory_bytes": int(outcome.get("memory_bytes", 0)),
+            "rule_id": decision.get("rule_id", "n/a"),
+        })
+    return rows
+
+
+def benchmark_table() -> str:
+    rows = benchmark_cases()
+    lines = [
+        "| Case | Problem | Algorithm | Runtime (s) | Peak memory (bytes) |",
+        "| --- | --- | --- | ---: | ---: |",
+    ]
+    for row in rows:
+        lines.append(
+            f"| {row['name']} | {row['problem']} | {row['algorithm']} | {row['runtime_seconds']:.6f} | {row['memory_bytes']} |"
+        )
+    return "\n".join(lines)
+
+
 def build_report() -> str:
     return """
 # DAA Decision Framework Report
@@ -667,6 +806,13 @@ The framework does not hard-code a single answer for every input. Instead, it in
 ## Measured runtime and memory
 The framework measures runtime with time.perf_counter() and memory with tracemalloc. Each run returns a runtime_seconds value and a memory_bytes peak. These are used alongside theoretical complexity to explain why some problems scale differently as input size increases.
 
+## Benchmark snapshot
+The following benchmark table is generated from representative cases and captures the runtime and memory behaviour of the framework on small-to-medium instances.
+
+""" + benchmark_table() + """
+
+A clear feature-change example appears in the MST benchmark: the same problem family on a dense graph chooses Prim, while the sparse version chooses Kruskal. This demonstrates the framework switching algorithm when the structural feature changes even though the high-level task remains 'minimum spanning tree'.
+
 ## What changes when the input changes
 The framework is intentionally sensitive to the scenario features:
 - Switching from sparse to dense graphs changes MST selection from Kruskal to Prim.
@@ -674,11 +820,21 @@ The framework is intentionally sensitive to the scenario features:
 - Increasing the decrease-key ratio relative to the merge ratio shifts the heap choice from Binomial to Fibonacci.
 - Larger n values create explosively larger search spaces for N-Queens, Hamiltonian, and TSP.
 
+## Complexity consistency check
+- MST: polynomial, O(E log V) with Kruskal or O(V^2) with dense Prim.
+- Fractional Knapsack: polynomial, greedy choice by value/weight.
+- 0/1 Knapsack: pseudo-polynomial in capacity W; optimization is pseudo-polynomial while the decision version is NP-Complete.
+- TSP: NP-Hard optimization; the decision version is NP-Complete.
+- Hamiltonian cycle: NP-Complete decision problem.
+- N-Queens: exponential worst-case search tree; usually analysed as a constraint-satisfaction problem rather than a standard NP-hard optimization problem.
+- Floyd-Warshall: polynomial, Θ(V^3).
+- Matrix-chain multiplication: polynomial dynamic-programming solution.
+
 ## Limitations and scalability notes
 The framework is best for small to medium exact instances where the problem can be described clearly enough to identify a correct DAA formulation. NP-hard and NP-complete problems are handled exactly, but their combinatorial growth means they become impractical as n increases. The rule-based design is deterministic and transparent, which is valuable for teaching and comparison, but it is not a general-purpose intelligent optimizer.
 
 ## Validation
-The framework is tested with pytest across detection logic, execution, and scenario-file handling. The test suite confirms that the main decision rules and solver calls work as intended.
+The framework is tested with pytest across detection logic, execution, scenario-file handling, and the generated benchmark report. The test suite confirms that the main decision rules and solver calls work as intended.
 """
 
 

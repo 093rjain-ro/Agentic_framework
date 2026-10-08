@@ -1,7 +1,15 @@
 import json
 from pathlib import Path
 
-from daa_framework.framework import detect_problem, classify_problem, run_scenario, build_report
+from daa_framework.framework import (
+    build_report,
+    classify_problem,
+    detect_problem,
+    fractional_knapsack,
+    minimum_spanning_tree,
+    run_scenario,
+    tsp_branch_and_bound,
+)
 
 
 def test_fractional_knapsack_detection():
@@ -13,6 +21,34 @@ def test_fractional_knapsack_detection():
     }
     result = detect_problem(scenario)
     assert result["problem"] == "fractional_knapsack"
+
+
+def test_fractional_knapsack_includes_positive_value_zero_weight_items():
+    result = fractional_knapsack(
+        [{"name": "free", "value": 5, "weight": 0}, {"name": "paid", "value": 10, "weight": 2}],
+        1,
+    )
+
+    assert result["total_value"] == 10
+    assert result["total_weight"] == 1
+    assert result["chosen"][0] == {"name": "free", "fraction": 1.0, "weight": 0, "value": 5}
+
+
+def test_disconnected_mst_is_not_reported_as_spanning_tree():
+    graph = {"vertices": ["A", "B", "C"], "edges": [("A", "B", 1)]}
+
+    assert minimum_spanning_tree(graph, "prim")["is_spanning_tree"] is False
+    assert minimum_spanning_tree(graph, "kruskal")["is_spanning_tree"] is False
+
+
+def test_tsp_without_a_tour_does_not_report_zero_cost():
+    graph = {"vertices": ["A", "B", "C"], "edges": [("A", "B", 1)]}
+
+    result = tsp_branch_and_bound(graph)
+
+    assert result["tour_found"] is False
+    assert result["cost"] is None
+    assert result["tour"] == []
 
 
 def test_prim_for_dense_graph():
@@ -65,3 +101,12 @@ def test_report_has_assignment_sections():
     assert "Complexity classification" in report
     assert "What changes when the input changes" in report
     assert "Architecture" in report
+
+
+def test_benchmark_cases_generate_metrics():
+    from daa_framework.framework import benchmark_cases
+
+    rows = benchmark_cases()
+    assert len(rows) >= 4
+    assert all("name" in row and "runtime_seconds" in row and "memory_bytes" in row for row in rows)
+    assert any(row["name"] == "dense_mst" for row in rows)

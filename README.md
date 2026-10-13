@@ -115,3 +115,11 @@ DAAassign/
 - The framework is intentionally rule-based and deterministic.
 - It distinguishes optimization and decision versions and keeps polynomial, pseudo-polynomial, NP-Hard, and NP-Complete labels explicit.
 - It is designed for clear teaching examples and small-to-medium exact instances, not for a general-purpose black-box optimizer.
+
+## 👥 Contributors
+
+* [Bharathponna216](https://github.com/Bharathponna216)
+* [Jai Sohan Reddy (jaisohanreddy)](https://github.com/jaisohanreddy)
+* [piyushj511](https://github.com/piyushj511)
+* [rohit162880](https://github.com/rohit162880)
+

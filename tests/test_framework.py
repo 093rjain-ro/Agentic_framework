@@ -7,6 +7,7 @@ from daa_framework.framework import (
     detect_problem,
     fractional_knapsack,
     minimum_spanning_tree,
+    prompt_scenario,
     run_scenario,
     tsp_branch_and_bound,
 )
@@ -92,6 +93,35 @@ def test_scenario_file_run(tmp_path):
     }))
     result = run_scenario(scenario_path)
     assert result["status"] == "ok"
+
+
+def test_interactive_mst_scenario_runs(monkeypatch):
+    answers = iter(["1", "A,B,C", "A,B,1", "B,C,2", ""])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    result = run_scenario(prompt_scenario())
+
+    assert result["status"] == "ok"
+    assert result["decision"]["problem"] == "mst"
+    assert result["result"]["cost"] == 3
+
+
+def test_interactive_custom_json_scenario_runs(monkeypatch):
+    scenario = {
+        "kind": "mst",
+        "graph": {
+            "vertices": ["start", "middle", "end"],
+            "edges": [["start", "middle", 4], ["middle", "end", 2], ["start", "end", 9]],
+        },
+    }
+    answers = iter(["8", json.dumps(scenario)])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    result = run_scenario(prompt_scenario())
+
+    assert result["status"] == "ok"
+    assert result["decision"]["problem"] == "mst"
+    assert result["result"]["cost"] == 6
 
 
 def test_report_has_assignment_sections():

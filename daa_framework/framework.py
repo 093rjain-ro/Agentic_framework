@@ -43,8 +43,12 @@ def load_scenario(input_data: Any) -> Dict[str, Any]:
         path = Path(input_data)
         if path.exists():
             with path.open("r", encoding="utf-8") as handle:
-                return json.load(handle)
-        return json.loads(str(input_data))
+                data = json.load(handle)
+        else:
+            data = json.loads(str(input_data))
+        if not isinstance(data, dict):
+            raise ValueError("Scenario JSON must be an object")
+        return data
     if isinstance(input_data, dict):
         return input_data
     raise ValueError("Scenario must be a JSON dict or a file path")
@@ -838,24 +842,102 @@ The framework is tested with pytest across detection logic, execution, scenario-
 """
 
 
+def prompt_scenario() -> Dict[str, Any]:
+    print("Choose a problem to test:")
+    print("1. Minimum spanning tree (MST)")
+    print("2. Traveling salesperson (TSP)")
+    print("3. All-pairs shortest paths")
+    print("4. Hamiltonian cycle")
+    print("5. Knapsack")
+    print("6. N-Queens")
+    print("7. Matrix-chain multiplication")
+    print("8. Custom scenario (JSON object or file path)")
+    choice = input("Problem number: ").strip()
+
+    if choice == "8":
+        custom_scenario = input("Scenario JSON or path to a JSON file: ").strip()
+        if not custom_scenario:
+            raise ValueError("Enter scenario JSON or a JSON file path")
+        return load_scenario(custom_scenario)
+    if choice == "6":
+        return {"kind": "n_queens", "n": int(input("Board size n: "))}
+    if choice == "7":
+        dimensions = [int(value.strip()) for value in input("Dimensions (comma-separated): ").split(",")]
+        if len(dimensions) < 2:
+            raise ValueError("Enter at least two matrix dimensions")
+        return {"kind": "matrix_chain", "matrix_dims": dimensions}
+    if choice == "5":
+        divisible = input("Can items be divided? (y/n): ").strip().lower()
+        if divisible not in {"y", "n"}:
+            raise ValueError("Answer y or n for whether items can be divided")
+        items = []
+        print("Enter each item as name,value,weight; press Enter when finished.")
+        while line := input("Item: ").strip():
+            fields = [field.strip() for field in line.split(",")]
+            if len(fields) != 3:
+                raise ValueError("Each item must have the form name,value,weight")
+            items.append({"name": fields[0], "value": int(fields[1]), "weight": int(fields[2])})
+        return {
+            "kind": "knapsack",
+            "items_divisible": divisible == "y",
+            "items": items,
+            "capacity": int(input("Capacity: ")),
+        }
+
+    graph_kinds = {
+        "1": "mst",
+        "2": "tsp",
+        "3": "all_pairs_shortest_path",
+        "4": "hamiltonian",
+    }
+    if choice not in graph_kinds:
+        raise ValueError("Choose a problem number from 1 to 8")
+
+    vertices = [vertex.strip() for vertex in input("Vertices (comma-separated): ").split(",") if vertex.strip()]
+    if not vertices:
+        raise ValueError("Enter at least one vertex")
+    weighted = choice != "4"
+    edge_format = "source,destination,weight" if weighted else "source,destination"
+    print(f"Enter each edge as {edge_format}; press Enter when finished.")
+    edges = []
+    while line := input("Edge: ").strip():
+        fields = [field.strip() for field in line.split(",")]
+        expected_fields = 3 if weighted else 2
+        if len(fields) != expected_fields:
+            raise ValueError(f"Each edge must have the form {edge_format}")
+        if fields[0] not in vertices or fields[1] not in vertices:
+            raise ValueError("Edge endpoints must match the vertices you entered")
+        edges.append(fields if not weighted else [fields[0], fields[1], int(fields[2])])
+    return {"kind": graph_kinds[choice], "graph": {"vertices": vertices, "edges": edges}}
+
+
 def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(description="Run the autonomous DAA decision framework.")
     parser.add_argument("scenario", nargs="?", help="Path to a JSON scenario file or inline JSON text")
+    parser.add_argument("--interactive", action="store_true", help="Build and run a custom scenario with guided prompts")
     args = parser.parse_args()
 
-    scenario = args.scenario or """
-    {
-      "kind": "mst",
-      "graph_density": 0.9,
-      "graph": {
-        "vertices": ["A","B","C","D"],
-        "edges": [["A","B",1],["A","C",2],["B","C",3],["B","D",4],["C","D",5],["A","D",6]]
-      }
-    }
-    """
-    result = run_scenario(scenario)
+    if args.interactive and args.scenario:
+        parser.error("provide either a scenario or --interactive, not both")
+    try:
+        if args.interactive:
+            scenario = prompt_scenario()
+        else:
+            scenario = args.scenario or """
+            {
+              "kind": "mst",
+              "graph_density": 0.9,
+              "graph": {
+                "vertices": ["A","B","C","D"],
+                "edges": [["A","B",1],["A","C",2],["B","C",3],["B","D",4],["C","D",5],["A","D",6]]
+              }
+            }
+            """
+        result = run_scenario(scenario)
+    except (ValueError, OSError) as exc:
+        result = {"status": "error", "error": str(exc)}
     print(json.dumps(result, indent=2))
 
 

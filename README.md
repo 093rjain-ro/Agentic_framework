@@ -84,6 +84,20 @@ py -m daa_framework.framework scenarios\mst_dense.json
 py -c "from daa_framework.framework import benchmark_table; print(benchmark_table())"
 ```
 
+To enter and run your own supported problem without writing a JSON file:
+
+```bash
+py -m daa_framework.framework --interactive
+```
+
+The prompts cover MST, TSP, all-pairs shortest paths, Hamiltonian cycle, knapsack, N-Queens, and matrix-chain multiplication. Choose option `8` to paste a custom scenario JSON object or enter the path to a JSON file. For example, save a scenario using the JSON shape shown above, then run it directly:
+
+```bash
+py -m daa_framework.framework scenarios\my_problem.json
+```
+
+For graph problems in the guided prompts, enter vertices separated by commas and then enter edges one per line (`source,destination,weight`; Hamiltonian edges omit the weight). For knapsack, enter items as `name,value,weight`. Press Enter on an empty edge or item prompt to finish. Every input path prints the same decision, explanation, result, runtime, and memory report. Inputs must describe one of the problem types with an implemented solver; arbitrary natural-language problem statements are not converted into algorithms automatically.
+
 To regenerate the report file:
 
 ```bash
